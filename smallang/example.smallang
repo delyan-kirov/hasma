@@ -7,4 +7,7 @@ b = times 33 4;
 
 print (add a b);
 
-//
+c = times
+  (plus  a b)
+  (times a 3)
+;
