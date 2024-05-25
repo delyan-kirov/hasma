@@ -1,14 +1,14 @@
-// { Hasma lang };
+// Hasma lang
 
-// { Function to prompt the user for input };
-fn prompt { msg } = do
+// Function to prompt the user for input
+fn prompt msg = do
   { print msg
   ; stdFlush
   ; stdGetLine
   }
 ;
 
-// { Main program };
+// Main program
 main = do
   { let 
       { firstName = prompt "What is your first name? "
