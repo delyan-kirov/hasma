@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -55,11 +56,11 @@ struct Lexema
 };
 
 void
-skipWhitespace(const std::string& source,
+skipWhitespace(const std::string* source,
                size_t& position,
                size_t& linePosition)
 {
-  while (position < source.size() && std::isspace(source[position])) {
+  while (position < (*source).size() && std::isspace((*source)[position])) {
     ++position;
     ++linePosition;
   }
@@ -73,23 +74,23 @@ handleEndOfLine(size_t& currentLine, size_t& linePosition)
 }
 
 void
-processText(const std::string& source,
+processText(const std::string* source,
             size_t& position,
             size_t& linePosition,
             size_t currentLine,
-            std::vector<Lexema>& lexemes)
+            std::vector<Lexema>* lexemes)
 {
   std::string text;
   ++position;
   ++linePosition;
 
-  while (position < source.size() && source[position] != '"') {
-    text += source[position];
+  while (position < (*source).size() && source->at(position) != '"') {
+    text += (*source).at(position);
     ++position;
     ++linePosition;
   }
 
-  if (position >= source.size() || source[position] != '"') {
+  if (position >= (*source).size() || source->at(position) != '"') {
     std::cerr << "ERROR: Did not find the closing \"\n";
     exit(1);
   }
@@ -98,27 +99,27 @@ processText(const std::string& source,
   ++position;
   ++linePosition;
 
-  lexemes.push_back(
+  lexemes->push_back(
     Lexema{ LexemaType::TEXT, text, Position{ currentLine, linePosition } });
 }
 
 void
-processNumber(const std::string& source,
+processNumber(const std::string* source,
               size_t& position,
               size_t& linePosition,
               size_t& currentLine,
-              std::vector<Lexema>& lexemes)
+              std::vector<Lexema>* lexemes)
 {
   std::string number;
-  number += source[position];
+  number += (*source).at(position);
 
-  while (position < source.size()) {
-    if (std::isdigit(source[position + 1])) {
-      number += source[position];
+  while (position < source->size()) {
+    if (std::isdigit(source->at(position + 1))) {
+      number += (source->at(position));
       ++position;
       ++linePosition;
     } else {
-      lexemes.push_back(Lexema{
+      lexemes->push_back(Lexema{
         LexemaType::NUMBER, number, Position{ currentLine, linePosition } });
       return;
     }
@@ -126,22 +127,23 @@ processNumber(const std::string& source,
 }
 
 void
-processVariable(const std::string& source,
+processVariable(const std::string* source,
                 size_t& position,
                 size_t& linePosition,
                 size_t& currentLine,
-                std::vector<Lexema>& lexemes)
+                std::vector<Lexema>* lexemes)
 {
   std::string variable;
-  variable += source[position];
+  variable += source->at(position);
 
-  while (position < source.size()) {
-    if ((std::isalnum(source[position + 1]) || source[position + 1] == '_')) {
-      variable += source[position + 1];
+  while (position < source->size()) {
+    if ((std::isalnum(source->at(position + 1)) ||
+         source->at(position + 1) == '_')) {
+      variable += source->at(position + 1);
       ++position;
       ++linePosition;
     } else {
-      lexemes.push_back(Lexema{
+      lexemes->push_back(Lexema{
         LexemaType::ALIAS, variable, Position{ currentLine, linePosition } });
       return;
     }
@@ -156,42 +158,42 @@ handleError(char currentChar)
 }
 
 void
-printLexemes(std::vector<Lexema>& lexemes)
+printLexemes(std::vector<Lexema>* lexemes)
 {
   // For demonstration, print the collected lexemes
-  for (const auto& lex : lexemes) {
+  for (const auto& lex : *lexemes) {
     std::cout << "Lexeme: " << lex.lexeme << " at line " << lex.position.line
               << ", column " << lex.position.column << ", type "
               << LexemaTypeToString(lex.type) << "\n";
   }
 }
 
-std::vector<Lexema>
-lexematize(const std::string& source)
+std::unique_ptr<std::vector<Lexema>>
+lexematize(const std::string* source)
 {
   size_t currentLine = 0;
   size_t position = 0;
   size_t linePosition = 0;
 
-  std::vector<Lexema> lexemes;
+  auto lexemes = std::make_unique<std::vector<Lexema>>();
 
-  while (position < source.size() - 1) {
+  while (position < source->size() - 1) {
     skipWhitespace(source, position, linePosition);
 
-    char currentChar = source.at(position);
+    char currentChar = source->at(position);
 
     switch (currentChar) {
       case '\n':
         handleEndOfLine(currentLine, linePosition);
         break;
       case ';':
-        lexemes.push_back(
+        lexemes->push_back(
           Lexema{ LexemaType::DIVIDOR, ";", { currentLine, linePosition } });
         break;
       case '/':
-        if (source.at(position + 1) == '/') {
+        if (source->at(position + 1) == '/') {
           ++position;
-          while (source.at(position) != '\n') {
+          while (source->at(position) != '\n') {
             ++position;
           }
           linePosition = 0;
@@ -202,25 +204,27 @@ lexematize(const std::string& source)
         }
         break;
       case '=':
-        lexemes.push_back(
+        lexemes->push_back(
           Lexema{ LexemaType::EQUAL, "=", { currentLine, linePosition } });
         break;
       case '(':
-        lexemes.push_back(
+        lexemes->push_back(
           Lexema{ LexemaType::PAREN_LEFT, "(", { currentLine, linePosition } });
         break;
       case ')':
-        lexemes.push_back(Lexema{
+        lexemes->push_back(Lexema{
           LexemaType::PAREN_RIGHT, ")", { currentLine, linePosition } });
         break;
       case '"':
-        processText(source, position, linePosition, currentLine, lexemes);
+        processText(source, position, linePosition, currentLine, lexemes.get());
         break;
       default:
         if (isdigit(currentChar)) {
-          processNumber(source, position, linePosition, currentLine, lexemes);
+          processNumber(
+            source, position, linePosition, currentLine, lexemes.get());
         } else if (isalpha(currentChar)) {
-          processVariable(source, position, linePosition, currentLine, lexemes);
+          processVariable(
+            source, position, linePosition, currentLine, lexemes.get());
         } else {
           handleError(currentChar);
         }
@@ -240,7 +244,7 @@ const static std::string source = "a = 2\n"
                                   "b = times a 2\n"
                                   ";\n";
 
-std::string
+std::string*
 readFile(const std::string& filePath)
 {
   std::ifstream file(filePath);
@@ -248,9 +252,15 @@ readFile(const std::string& filePath)
     throw std::runtime_error("Could not open file");
   }
 
+  // Create a std::stringstream object to read file contents
   std::stringstream buffer;
   buffer << file.rdbuf();
-  return buffer.str();
+
+  // Allocate memory on the heap for the string
+  std::string* fileContents = new std::string(buffer.str());
+
+  // Return a pointer to the heap-allocated string
+  return fileContents;
 }
 
 int
@@ -258,8 +268,8 @@ main()
 {
   // static example
   {
-    auto lexemes = lexematize(source);
-    printLexemes(lexemes);
+    auto lexemes = lexematize(&source);
+    printLexemes(lexemes.get());
   }
 
   // file example
@@ -268,9 +278,9 @@ main()
     std::cout << "\n\nINFO: Tokenizing: " << filePath << std::endl;
 
     try {
-      std::string fileContent = readFile(filePath);
+      std::string* fileContent = readFile(filePath);
       auto lexemes = lexematize(fileContent);
-      printLexemes(lexemes);
+      printLexemes(lexemes.get());
     } catch (const std::exception& e) {
       std::cerr << e.what() << std::endl;
       return 1;
