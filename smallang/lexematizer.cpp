@@ -302,10 +302,34 @@ struct AssignmentImpl
 //   Expression definition;
 // };
 
-std::vector<Expression>
-parser(std::unique_ptr<std::vector<Lexema>> lexemes) {
+Expression // TODO
+parseExpr(std::unique_ptr<std::vector<Lexema>>& lexemes)
+{
+  return Expression();
+}
 
+void // TODO
+expect(LexemaType lexType, std::vector<Lexema>* lexemes)
+{
+  return;
+}
+
+std::unique_ptr<std::vector<Expression>> // TODO
+parser(std::unique_ptr<std::vector<Lexema>> lexemes)
+{
+  auto expressions = std::make_unique<std::vector<Expression>>();
+
+  while (lexemes->size() > 0) {
+    auto exrp = parseExpr(lexemes);
+    expect(LexemaType::DIVIDOR, lexemes.get());
+    expressions->push_back(exrp);
+  }
+
+  return expressions;
 };
+
+// TODO Separate code into different modules
+// TODO Generate tests Separately
 
 int
 main()
