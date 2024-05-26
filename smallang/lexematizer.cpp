@@ -6,6 +6,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 enum class LexemaType
@@ -263,6 +264,49 @@ readFile(const std::string& filePath)
   return fileContents;
 }
 
+// PARSER
+
+struct VariableImpl
+{
+  Lexema name;
+};
+
+struct NumberImpl
+{
+  int value;
+};
+
+// Forward declarations
+struct AssignmentImpl;
+
+struct ApplicationImpl
+{
+  Lexema name;
+  std::variant<VariableImpl, ApplicationImpl*> parameter;
+};
+
+using Expression =
+  std::variant<AssignmentImpl, VariableImpl, NumberImpl, ApplicationImpl*>;
+
+struct AssignmentImpl
+{
+  VariableImpl name;
+  Expression* definition;
+};
+
+// // Define LambdaImpl
+// struct LambdaImpl
+// {
+//   Lexema name;
+//   VariableImpl variable;
+//   Expression definition;
+// };
+
+std::vector<Expression>
+parser(std::unique_ptr<std::vector<Lexema>> lexemes) {
+
+};
+
 int
 main()
 {
@@ -288,6 +332,3 @@ main()
   }
   return 0;
 }
-
-// TODO Fix ;
-// TODO Fix )
