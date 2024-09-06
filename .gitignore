@@ -1,2 +1,7 @@
 .vscode
 *.out
+
+
+# Added by cargo
+
+/target

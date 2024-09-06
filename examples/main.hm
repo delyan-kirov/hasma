@@ -1,0 +1,6 @@
+msg : Txt = "Hello world\n";
+
+main : IO () = do 
+  { print msg
+  ; print "Bye!\n"
+  }
