@@ -2,31 +2,51 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 
+enum Variable {
+    Txt(String),
+    Integer(i64),
+    Natural(i64),
+    Unit,
+    Tuple(Box<Variable>, Box<Variable>),
+    Record(Vec<Variable>, HasmaTypes),
+    Enumeration(Vec<Expression>),
+    Boolean(bool),
+}
+
 enum Expression {
-    Variable(HasmaTypes),                          // variable
-    Abstraction(HasmaTypes, Box<Expression>),      // parameter + body
-    Application(Box<Expression>, Box<Expression>), // function + argument
-    DoBlock(Vec<Expression>),                      // do block
-    LetBlock(Vec<Expression>),                     // let block
-                                                   // if block
+    Variable(Variable, HasmaTypes),
+    Abstraction {
+        parameter: HasmaTypes,
+        definition: Box<Expression>,
+    },
+    Application {
+        hasma_type: HasmaTypes,
+        parameter: Box<Expression>,
+        definition: Box<Expression>,
+    }, // function + argument
+    DoBlock(Vec<Expression>),  // do block
+    LetBlock(Vec<Expression>), // let block
+    IfBlock(Vec<(Expression, Expression)>), // if block
+                               // case block
 }
 
 enum HasmaTypes {
-    Txt(String),                                // Utf8 string
+    Boolean,                                    // Boolean data type
+    Txt,                                        // Utf8 string
     Function(Box<HasmaTypes>, Box<Expression>), // function variable + function body
-    Int(isize),                                 // signed integer
-    Nat(usize),                                 // unsigned integer
+    Int,                                        // signed integer
+    Nat,                                        // unsigned integer
     Unit,                                       // trivial type
-    Tuple(Vec<HasmaTypes>),                     // tuple type
+    Tuple(Box<HasmaTypes>, Box<HasmaTypes>),    // tuple type
     Record(Vec<HasmaTypes>),                    // record type
     Enumeration(Vec<(String, HasmaTypes)>),     // enum tag + type
+    NoneDetermined,                             // type either undetemined or wrong
 }
 
-fn parse_expr<T>(file: T) -> Expression
+fn parser<T>(file: T, definitions: Vec<Expression>) -> Expression
 where
     T: Iterator<Item = char>,
 {
-    let mut definitions: Vec<Expression> = Vec::new();
     let mut expr: Expression;
     let mut expr_string: String = String::new();
 
@@ -44,16 +64,6 @@ where
     todo!()
 }
 
-fn parser<T>(file: T) -> Vec<Expression>
-where
-    T: Iterator<Item = char>,
-{
-    let mut definitions: Vec<Expression> = Vec::new();
-    let expr: Expression = parse_expr(file);
-
-    todo!()
-}
-
 fn main() -> std::io::Result<()> {
     let file = {
         let file = File::open("./examples/main.hm")?;
@@ -63,7 +73,8 @@ fn main() -> std::io::Result<()> {
             .map(|b| b as char)
     };
 
-    parser(file);
+    let definitions: Vec<Expression> = Vec::new();
+    let _ = parser(file, definitions);
 
     Ok(())
 }
