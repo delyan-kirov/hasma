@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 
-#[derive(std::fmt::Debug)]
+#[derive(std::fmt::Debug, Clone)]
 enum Type {
     Int,
     Txt,
@@ -24,21 +24,29 @@ enum Literal {
 }
 
 #[derive(std::fmt::Debug)]
-enum Binding {
-    Name(String),
-    Type(Type),
+struct ADT {
+    name: String,
+    adt_type: Type,
+    value: Box<Expr>,
 }
 
 #[derive(std::fmt::Debug)]
-enum Closure {
-    Param(Binding),
-    Def(Box<Expr>),
-    Type(Type),
+struct Closure {
+    name: String,
+    param: String,
+    def: Box<Expr>,
+    cl_type: Type,
+}
+
+#[derive(std::fmt::Debug)]
+struct App {
+    action: Box<Expr>,
+    argument: Box<Expr>,
 }
 
 #[derive(std::fmt::Debug)]
 enum Expr {
-    Var(Binding),
+    ADT(ADT),
     Literal(Literal),
     Closure(Closure),
     App(Box<Expr>, Box<Expr>),
@@ -120,9 +128,75 @@ where
     tokens
 }
 
-fn parse(tokens: Vec<Token>) -> Vec<Expr> {
+// fn parse_expr<It>(tokens: &mut It) -> Expr
+// where
+//     It: Iterator<Item = Token>,
+// {
+//     todo!()
+// }
+
+fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
     todo!()
 }
+
+fn parse_closure(tokens: &Vec<Token>, idx: &mut usize) -> Closure {
+    todo!()
+}
+
+fn parse_adt<It>(tokens: &mut It) -> ADT
+where
+    It: Iterator<Item = Token>,
+{
+    todo!()
+}
+
+fn parse_app<It>(tokens: &mut It) -> App
+where
+    It: Iterator<Item = Token>,
+{
+    todo!()
+}
+
+fn parse_literal(tokens: &Vec<Token>, idx: &mut usize) -> Literal {
+    todo!()
+}
+
+fn parse(tokens: Vec<Token>) -> Vec<Expr> {
+    let mut exprs = Vec::<Expr>::new();
+    let mut name = String::new();
+    let mut expr_type: Type = Type::Any;
+    let mut view: usize = 0;
+
+    for (i, _) in tokens.iter().enumerate() {
+        match &tokens[i] {
+            Token::Name(expr_name) => name = expr_name.clone(),
+            Token::Colon => expr_type = parse_type(&tokens, &mut view),
+            Token::Equal => match &expr_type {
+                Type::Int | Type::Txt | Type::Real | Type::Bool | Type::Unit | Type::IO(_) => {
+                    let literal: Literal = parse_literal(&tokens, &mut view);
+                    let expr = Expr::ADT(ADT {
+                        name: name.clone(),
+                        adt_type: expr_type.clone(),
+                        value: Box::new(Expr::Literal(literal)),
+                    });
+                    exprs.push(expr);
+                }
+                Type::Any => eprintln!("ERROR: expression {name} has type any!"),
+                Type::Fn(_, _) => {
+                    let closure: Closure = parse_closure(&tokens, &mut view);
+                    exprs.push(Expr::Closure(closure));
+                }
+            },
+            token => eprintln!("ERROR: Found unexpected token {:?}!", token),
+        }
+        view += 1;
+    }
+    todo!()
+}
+// Name(String),
+// Param(String),
+// Def(Box<Expr>),
+// Type(Type),
 
 fn main() -> std::io::Result<()> {
     let file = {
@@ -135,9 +209,11 @@ fn main() -> std::io::Result<()> {
 
     let tokens = tokenize(file);
 
-    for t in tokens {
+    for t in &tokens {
         println!("{:?}", t);
     }
+
+    let exprs = parse(tokens);
 
     Ok(())
 }
