@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::process::exit;
 
 #[derive(std::fmt::Debug, Clone)]
 enum Type {
@@ -40,8 +41,8 @@ struct Closure {
 
 #[derive(std::fmt::Debug)]
 struct App {
-    action: Box<Expr>,
     argument: Box<Expr>,
+    action: Box<Expr>,
 }
 
 #[derive(std::fmt::Debug)]
@@ -64,6 +65,7 @@ enum Token {
     Colon,
     SemiColon,
     FnSlash,
+    Quote,
 }
 
 fn tokenize<It>(input: It) -> Vec<Token>
@@ -106,6 +108,10 @@ where
                 tokenize_string(&mut curr, &mut tokens);
                 tokens.push(Token::ParenR)
             }
+            '"' => {
+                tokenize_string(&mut curr, &mut tokens);
+                tokens.push(Token::Quote)
+            }
             '=' => {
                 tokenize_string(&mut curr, &mut tokens);
                 tokens.push(Token::Equal)
@@ -136,42 +142,144 @@ where
 // }
 
 fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
-    todo!()
+    let token: &Token = &tokens[*idx];
+    let new_type;
+    *idx += 1;
+    new_type = match token {
+        Token::Name(name) if &name[0..] == "Int" => Type::Int,
+        Token::Name(name) if &name[0..] == "Txt" => Type::Txt,
+        Token::Name(name) if &name[0..] == "Real" => Type::Real,
+        Token::Name(name) if &name[0..] == "Bool" => Type::Bool,
+        Token::Name(name) if &name[0..] == "IO" => {
+            *idx += 1;
+            let inner_type: Type = parse_type(tokens, idx);
+            Type::IO(Box::new(inner_type))
+        }
+        Token::Name(name) if name.chars().next().is_none() => {
+            eprintln!("ERROR: the type is somehow empty.");
+            exit(1);
+        }
+        Token::Name(name) if name.chars().next().unwrap().is_lowercase() => {
+            eprintln!(
+                "SYNTAX ERROR: the type: {name} starts with a lowercase, which is not valid."
+            );
+            exit(1);
+        }
+        Token::Name(_adt) => {
+            eprintln!("ERROR: Custom types are not supported yet!");
+            exit(1);
+        }
+        Token::ParenL => {
+            *idx += 1;
+            match &tokens[*idx] {
+                Token::ParenR => Type::Unit,
+                _other_type => {
+                    eprintln!("ERROR: nested types are not supported yet!");
+                    exit(1);
+                }
+            }
+        }
+        token => {
+            eprintln!("SYNTEX ERROR: Expected type, got {:?}", token);
+            exit(1);
+        }
+    };
+    match &tokens[*idx] {
+        Token::FnArrow => {
+            *idx += 1;
+            let codomain: Type = parse_type(tokens, idx);
+            Type::Fn(Box::new(new_type), Box::new(codomain))
+        }
+        Token::SemiColon | Token::Equal => new_type,
+        token => {
+            eprintln!(
+                "SYNTEX ERROR: Expected a semi-colon or equals, found: {:?}",
+                token
+            );
+            exit(1);
+        }
+    }
 }
 
 fn parse_closure(tokens: &Vec<Token>, idx: &mut usize) -> Closure {
     todo!()
 }
 
-fn parse_adt<It>(tokens: &mut It) -> ADT
-where
-    It: Iterator<Item = Token>,
-{
+fn parse_adt(tokens: &Vec<Token>, idx: &mut usize) -> ADT {
     todo!()
 }
 
-fn parse_app<It>(tokens: &mut It) -> App
-where
-    It: Iterator<Item = Token>,
-{
+fn parse_app(tokens: &Vec<Token>, idx: &mut usize) -> App {
     todo!()
 }
 
 fn parse_literal(tokens: &Vec<Token>, idx: &mut usize) -> Literal {
-    todo!()
+    let token: &Token = &tokens[*idx];
+    *idx += 1;
+    match token {
+        Token::Int(n) => Literal::Int(*n),
+        Token::Real(r) => Literal::Real(*r),
+        Token::Name(name) if &name[0..] == "True" || &name[0..] == "False" => {
+            Literal::Bool(&name[0..] == "True")
+        }
+        Token::ParenL => {
+            *idx += 1;
+            match &tokens[*idx] {
+                Token::ParenR => Literal::Unit,
+                other_lit => {
+                    eprintln!("ERROR: unsupported literal: {:?}", other_lit);
+                    exit(1);
+                }
+            }
+        }
+        Token::Quote => {
+            *idx += 1;
+            match &tokens[*idx] {
+                Token::Name(name) => {
+                    *idx += 1;
+                    match &tokens[*idx] {
+                        Token::Quote => Literal::Txt(name.to_string()),
+                        token => {
+                            eprintln!("SYNTAX ERROR: expected a string literal ending with a \" found {:?}", token);
+                            exit(1);
+                        }
+                    }
+                }
+                token => {
+                    eprintln!(
+                        "SYNTAX ERROR: expected a string literal ending with a \" found {:?}",
+                        token
+                    );
+                    exit(1);
+                }
+            }
+        }
+        token => {
+            // TODO It's better not to fail outright but rather return a custom error and then
+            // print all parsing errors that were encountered.
+            eprintln!("PARSE ERROR: The token {:?} is not a literal.", token);
+            exit(1);
+        }
+    }
 }
 
-fn parse(tokens: Vec<Token>) -> Vec<Expr> {
-    let mut exprs = Vec::<Expr>::new();
+fn parse(tokens: Vec<Token>, exprs: &mut Vec<Expr>, mut view: usize) {
     let mut name = String::new();
     let mut expr_type: Type = Type::Any;
-    let mut view: usize = 0;
 
-    for (i, _) in tokens.iter().enumerate() {
-        match &tokens[i] {
-            Token::Name(expr_name) => name = expr_name.clone(),
-            Token::Colon => expr_type = parse_type(&tokens, &mut view),
-            Token::Equal => match &expr_type {
+    match &tokens[view] {
+        Token::Name(expr_name) => {
+            view += 1;
+            name = expr_name.clone();
+        }
+        Token::Colon => {
+            view += 1;
+            expr_type = parse_type(&tokens, &mut view);
+        }
+        Token::Equal => {
+            view += 1;
+            println!("HERE");
+            match &expr_type {
                 Type::Int | Type::Txt | Type::Real | Type::Bool | Type::Unit | Type::IO(_) => {
                     let literal: Literal = parse_literal(&tokens, &mut view);
                     let expr = Expr::ADT(ADT {
@@ -186,17 +294,12 @@ fn parse(tokens: Vec<Token>) -> Vec<Expr> {
                     let closure: Closure = parse_closure(&tokens, &mut view);
                     exprs.push(Expr::Closure(closure));
                 }
-            },
-            token => eprintln!("ERROR: Found unexpected token {:?}!", token),
+            }
         }
-        view += 1;
+        token => eprintln!("ERROR: Found unexpected token {:?}!", token),
     }
     todo!()
 }
-// Name(String),
-// Param(String),
-// Def(Box<Expr>),
-// Type(Type),
 
 fn main() -> std::io::Result<()> {
     let file = {
@@ -213,7 +316,15 @@ fn main() -> std::io::Result<()> {
         println!("{:?}", t);
     }
 
-    let exprs = parse(tokens);
+    let exprs = {
+        let mut exprs = Vec::<Expr>::new();
+        parse(tokens, &mut exprs, 0);
+        exprs
+    };
+
+    for expr in exprs {
+        println!("{:?}", expr);
+    }
 
     Ok(())
 }
