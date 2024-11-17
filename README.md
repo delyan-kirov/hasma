@@ -14,6 +14,12 @@ cargo run
 
 ## TODO
 
+1. Define the function "add" inside global scope
+2. Finish the parse expr function
+3. Finish the parse app function
+
+## LONG TERM TODO
+
 1. Finish the parsing step for the simplified version of hasma.
 2. Write the interpreter for hasma.
 3. Port to wasm.

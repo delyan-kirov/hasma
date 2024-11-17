@@ -15,7 +15,7 @@ enum Type {
     Any,
 }
 
-#[derive(std::fmt::Debug)]
+#[derive(std::fmt::Debug, Clone)]
 enum Literal {
     Int(i32),
     Txt(String),
@@ -24,16 +24,15 @@ enum Literal {
     Unit,
 }
 
-#[derive(std::fmt::Debug)]
+#[derive(std::fmt::Debug, Clone)]
 struct ADT {
     name: String,
     adt_type: Type,
     value: Box<Expr>,
 }
 
-#[derive(std::fmt::Debug)]
+#[derive(std::fmt::Debug, Clone)]
 struct Closure {
-    name: String,
     param: String,
     def: Box<Expr>,
     cl_type: Type,
@@ -45,7 +44,7 @@ struct App {
     action: Box<Expr>,
 }
 
-#[derive(std::fmt::Debug)]
+#[derive(std::fmt::Debug, Clone)]
 enum Expr {
     ADT(ADT),
     Literal(Literal),
@@ -54,6 +53,13 @@ enum Expr {
 }
 
 #[derive(std::fmt::Debug)]
+struct Def {
+    name: String,
+    def_type: Type,
+    body: Box<Expr>,
+}
+
+#[derive(std::fmt::Debug, PartialEq)]
 enum Token {
     Int(i32),
     Name(String),
@@ -144,7 +150,7 @@ where
 fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
     let token: &Token = &tokens[*idx];
     let new_type;
-    *idx += 1;
+
     new_type = match token {
         Token::Name(name) if &name[0..] == "Int" => Type::Int,
         Token::Name(name) if &name[0..] == "Txt" => Type::Txt,
@@ -184,9 +190,10 @@ fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
             exit(1);
         }
     };
-    match &tokens[*idx] {
+    match &tokens[*idx + 1] {
         Token::FnArrow => {
-            *idx += 1;
+            *idx += 2;
+            println!("INFO: Handle fn type, with id: {}", idx);
             let codomain: Type = parse_type(tokens, idx);
             Type::Fn(Box::new(new_type), Box::new(codomain))
         }
@@ -201,7 +208,60 @@ fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
     }
 }
 
-fn parse_closure(tokens: &Vec<Token>, idx: &mut usize) -> Closure {
+fn parse_closure(
+    tokens: &Vec<Token>,
+    idx: &mut usize,
+    expr_type: &Type,
+    defs: &mut Vec<Def>,
+) -> Closure {
+    if Token::FnSlash != tokens[*idx] {
+        eprintln!(
+            "SYNTAX ERROR: Expected a closure expression which must begin with \"\\\", but found: {:?}",
+            tokens[*idx]
+        );
+        exit(1);
+    } else {
+        *idx += 1;
+    }
+
+    let mut args: Vec<String> = Vec::with_capacity(5);
+
+    // Parsing args
+    while let Token::Name(a) = &tokens[*idx] {
+        args.push(a.clone());
+        *idx += 1;
+    }
+
+    if args.is_empty() {
+        eprintln!("SYNTAX ERROR: Expected closure arguments but found none");
+        exit(1);
+    }
+
+    if Token::Equal != tokens[*idx] {
+        eprintln!("SYNTAX ERROR: Expected closure definition which must begin with \"=\", but found: {:?}", tokens[*idx]);
+        exit(1);
+    } else {
+        *idx += 1;
+    }
+
+    let expr = parse_expr(tokens, idx, &defs);
+
+    // TODO: We assume the closure has one argument for now
+    Closure {
+        param: args[0].clone(),
+        def: expr,
+        cl_type: expr_type.clone(),
+    }
+}
+
+fn parse_expr(tokens: &Vec<Token>, idx: &mut usize, defs: &Vec<Def>) -> Box<Expr> {
+    // NOTE: We assume that we can come here only after some definition like a closure definition
+    // or some other definition that is not at global level
+    // NOTE: Because of this, we will not check types. We assume they are resolved at global scope
+    // or at a let scope or the type is inferrable.
+    // NOTE We assume every name is either a new name from a let expression or lambda expression or
+    // is in the global scope. If not, we panic
+    println!("Current token is: {:?}", tokens[*idx]);
     todo!()
 }
 
@@ -263,42 +323,57 @@ fn parse_literal(tokens: &Vec<Token>, idx: &mut usize) -> Literal {
     }
 }
 
-fn parse(tokens: Vec<Token>, exprs: &mut Vec<Expr>, mut view: usize) {
+fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
     let mut name = String::new();
     let mut expr_type: Type = Type::Any;
+    let mut defs = Vec::<Def>::new();
 
-    match &tokens[view] {
-        Token::Name(expr_name) => {
-            view += 1;
-            name = expr_name.clone();
-        }
-        Token::Colon => {
-            view += 1;
-            expr_type = parse_type(&tokens, &mut view);
-        }
-        Token::Equal => {
-            view += 1;
-            println!("HERE");
-            match &expr_type {
-                Type::Int | Type::Txt | Type::Real | Type::Bool | Type::Unit | Type::IO(_) => {
-                    let literal: Literal = parse_literal(&tokens, &mut view);
-                    let expr = Expr::ADT(ADT {
-                        name: name.clone(),
-                        adt_type: expr_type.clone(),
-                        value: Box::new(Expr::Literal(literal)),
-                    });
-                    exprs.push(expr);
-                }
-                Type::Any => eprintln!("ERROR: expression {name} has type any!"),
-                Type::Fn(_, _) => {
-                    let closure: Closure = parse_closure(&tokens, &mut view);
-                    exprs.push(Expr::Closure(closure));
+    while view < tokens.len() {
+        println!("CURRENT TOKEN IS: {:?} WITH ID: {}", tokens[view], view);
+        match &tokens[view] {
+            Token::Name(expr_name) => {
+                name = expr_name.clone();
+            }
+            Token::Colon => {
+                view += 1;
+                expr_type = parse_type(&tokens, &mut view);
+                println!("CURRENT TYPE IS: {:?}", expr_type);
+            }
+            Token::Equal => {
+                view += 1;
+                match &expr_type {
+                    Type::Int | Type::Txt | Type::Real | Type::Bool | Type::Unit => {
+                        let literal: Literal = parse_literal(&tokens, &mut view);
+                        let expr = Expr::ADT(ADT {
+                            name: name.clone(),
+                            adt_type: expr_type.clone(),
+                            value: Box::new(Expr::Literal(literal)),
+                        });
+
+                        defs.push(Def {
+                            name: name.clone(),
+                            def_type: expr_type.clone(),
+                            body: Box::new(expr),
+                        });
+                    }
+                    Type::Any => eprintln!("ERROR: expression {name} has type any!"),
+                    Type::Fn(_, _) => {
+                        let closure: Closure =
+                            parse_closure(&tokens, &mut view, &expr_type, &mut defs);
+                        defs.push(Def {
+                            name: name.clone(),
+                            def_type: expr_type.clone(),
+                            body: Box::new(Expr::Closure(closure)),
+                        });
+                    }
+                    Type::IO(_) => todo!(),
                 }
             }
+            Token::FnArrow => {}
+            token => eprintln!("ERROR: Found unexpected token {:?}!", token),
         }
-        token => eprintln!("ERROR: Found unexpected token {:?}!", token),
+        view += 1;
     }
-    todo!()
 }
 
 fn main() -> std::io::Result<()> {
@@ -316,15 +391,15 @@ fn main() -> std::io::Result<()> {
         println!("{:?}", t);
     }
 
-    let exprs = {
-        let mut exprs = Vec::<Expr>::new();
-        parse(tokens, &mut exprs, 0);
-        exprs
+    let defs = {
+        let mut defs = Vec::<Def>::new();
+        parse(tokens, &mut defs, 0);
+        defs
     };
 
-    for expr in exprs {
-        println!("{:?}", expr);
-    }
+    // for expr in exprs {
+    //     println!("{:?}", expr);
+    // }
 
     Ok(())
 }
