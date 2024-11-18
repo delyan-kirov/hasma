@@ -48,8 +48,14 @@ struct App {
 enum Expr {
     ADT(ADT),
     Literal(Literal),
-    Closure(Closure),
+    ClosureExpr(Closure),
     App(Box<Expr>, Box<Expr>),
+    Magic(MagicExpr),
+}
+
+#[derive(std::fmt::Debug, Clone)]
+enum MagicExpr {
+    AddX,
 }
 
 #[derive(std::fmt::Debug)]
@@ -139,13 +145,6 @@ where
 
     tokens
 }
-
-// fn parse_expr<It>(tokens: &mut It) -> Expr
-// where
-//     It: Iterator<Item = Token>,
-// {
-//     todo!()
-// }
 
 fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
     let token: &Token = &tokens[*idx];
@@ -262,7 +261,19 @@ fn parse_expr(tokens: &Vec<Token>, idx: &mut usize, defs: &Vec<Def>) -> Box<Expr
     // NOTE We assume every name is either a new name from a let expression or lambda expression or
     // is in the global scope. If not, we panic
     println!("Current token is: {:?}", tokens[*idx]);
-    todo!()
+    match tokens[*idx] {
+        Token::Int(a) => Box::new(Expr::Literal(Literal::Int(a))),
+        Token::Real(a) => Box::new(Expr::Literal(Literal::Real(a))),
+        Token::Name(var) => {
+            for def in defs {
+                if def.name == var {
+                } else {
+                    exit(1);
+                }
+            }
+        }
+        _ => exit(1),
+    }
 }
 
 fn parse_adt(tokens: &Vec<Token>, idx: &mut usize) -> ADT {
@@ -363,7 +374,7 @@ fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
                         defs.push(Def {
                             name: name.clone(),
                             def_type: expr_type.clone(),
-                            body: Box::new(Expr::Closure(closure)),
+                            body: Box::new(Expr::ClosureExpr(closure)),
                         });
                     }
                     Type::IO(_) => todo!(),
@@ -385,14 +396,42 @@ fn main() -> std::io::Result<()> {
             .map(|b| b as char)
     };
 
-    let tokens = tokenize(file);
+    let tokens: Vec<Token> = tokenize(file);
 
     for t in &tokens {
         println!("{:?}", t);
     }
 
+    let add = Def {
+        name: "add".to_string(),
+        def_type: Type::Fn(
+            Box::new(Type::Int),
+            Box::new(Type::Fn(Box::new(Type::Int), Box::new(Type::Int))),
+        ),
+        body: Box::new(Expr::ClosureExpr(Closure {
+            param: "x".to_string(),
+            cl_type: Type::Fn(
+                Box::new(Type::Int),
+                Box::new(Type::Fn(Box::new(Type::Int), Box::new(Type::Int))),
+            ),
+            def: Box::new(Expr::ClosureExpr(Closure {
+                param: "x".to_string(), // First parameter
+                cl_type: Type::Fn(
+                    Box::new(Type::Int),
+                    Box::new(Type::Fn(Box::new(Type::Int), Box::new(Type::Int))),
+                ),
+                def: Box::new(Expr::ClosureExpr(Closure {
+                    param: "y".to_string(), // Second param
+                    def: Box::new(Expr::Magic(MagicExpr::AddX)),
+                    cl_type: Type::Fn(Box::new(Type::Int), Box::new(Type::Int)),
+                })),
+            })),
+        })),
+    };
+
     let defs = {
         let mut defs = Vec::<Def>::new();
+        defs.push(add);
         parse(tokens, &mut defs, 0);
         defs
     };
