@@ -3,6 +3,8 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::process::exit;
 
+mod Lexer;
+
 #[derive(std::fmt::Debug, Clone)]
 enum Type {
     Int,
@@ -63,87 +65,6 @@ struct Def {
     name: String,
     def_type: Type,
     body: Box<Expr>,
-}
-
-#[derive(std::fmt::Debug, PartialEq)]
-enum Token {
-    Int(i32),
-    Name(String),
-    Real(f64),
-    Equal,
-    FnArrow,
-    ParenL,
-    ParenR,
-    Colon,
-    SemiColon,
-    FnSlash,
-    Quote,
-}
-
-fn tokenize<It>(input: It) -> Vec<Token>
-where
-    It: Iterator<Item = char>,
-{
-    let mut tokens = Vec::<Token>::new();
-    let mut curr = String::new();
-    let mut line: usize = 0;
-
-    let tokenize_string = |s: &mut String, tokens: &mut Vec<Token>| {
-        if let Ok(number) = s.parse::<i32>() {
-            tokens.push(Token::Int(number));
-        } else if let Ok(real) = s.parse::<f64>() {
-            tokens.push(Token::Real(real));
-        } else if !s.is_empty() {
-            tokens.push(Token::Name(s.clone()));
-        }
-
-        *s = "".to_string();
-    };
-
-    for c in input {
-        match c {
-            '\n' => line += 1,
-            t if t.is_whitespace() => tokenize_string(&mut curr, &mut tokens),
-            ';' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::SemiColon)
-            }
-            ':' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::Colon)
-            }
-            '(' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::ParenL)
-            }
-            ')' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::ParenR)
-            }
-            '"' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::Quote)
-            }
-            '=' => {
-                tokenize_string(&mut curr, &mut tokens);
-                tokens.push(Token::Equal)
-            }
-            '>' => {
-                if &curr[0..] == "-" {
-                    tokens.push(Token::FnArrow);
-                    curr = "".to_string();
-                } else {
-                    tokenize_string(&mut curr, &mut tokens);
-                    eprintln!("WARNING {line}: use of '-' and '>' as anything but the function constructor '->' is not supported yet");
-                }
-            }
-            '\\' => tokens.push(Token::FnSlash),
-            t if t.is_alphanumeric() || t == '_' || t == '-' || t == '-' => curr.push(t),
-            t => eprintln!("WARNING {line}: character: {t} not supported, ignoring it."),
-        }
-    }
-
-    tokens
 }
 
 fn parse_type(tokens: &Vec<Token>, idx: &mut usize) -> Type {
@@ -243,7 +164,7 @@ fn parse_closure(
         *idx += 1;
     }
 
-    let expr = parse_expr(tokens, idx, &defs);
+    let expr = parse_expr(tokens, idx, &defs, None);
 
     // TODO: We assume the closure has one argument for now
     Closure {
@@ -253,7 +174,12 @@ fn parse_closure(
     }
 }
 
-fn parse_expr(tokens: &Vec<Token>, idx: &mut usize, defs: &Vec<Def>) -> Box<Expr> {
+fn parse_expr(
+    tokens: &Vec<Token>,
+    idx: &mut usize,
+    defs: &Vec<Def>,
+    expected_type: Option<Box<Type>>,
+) -> Box<Expr> {
     // NOTE: We assume that we can come here only after some definition like a closure definition
     // or some other definition that is not at global level
     // NOTE: Because of this, we will not check types. We assume they are resolved at global scope
@@ -261,19 +187,90 @@ fn parse_expr(tokens: &Vec<Token>, idx: &mut usize, defs: &Vec<Def>) -> Box<Expr
     // NOTE We assume every name is either a new name from a let expression or lambda expression or
     // is in the global scope. If not, we panic
     println!("Current token is: {:?}", tokens[*idx]);
-    match tokens[*idx] {
-        Token::Int(a) => Box::new(Expr::Literal(Literal::Int(a))),
-        Token::Real(a) => Box::new(Expr::Literal(Literal::Real(a))),
+    match &tokens[*idx] {
+        Token::Int(a) => return Box::new(Expr::Literal(Literal::Int(*a))),
+        Token::Real(a) => return Box::new(Expr::Literal(Literal::Real(*a))),
         Token::Name(var) => {
             for def in defs {
-                if def.name == var {
-                } else {
-                    exit(1);
+                if &def.name == var {
+                    *idx += 1;
+                    match &def.def_type {
+                        Type::Int => {
+                            if let Expr::Literal(Literal::Int(num)) = *def.body {
+                                return Box::new(Expr::Literal(Literal::Int(num)));
+                            } else {
+                                eprintln!("PARSE-ERROR: Expected an integer due to type Int");
+                                exit(1);
+                            }
+                        }
+                        Type::Real => {
+                            if let Expr::Literal(Literal::Real(num)) = *def.body {
+                                return Box::new(Expr::Literal(Literal::Real(num)));
+                            } else {
+                                eprintln!("PARSE-ERROR: Expected a real number due to type Real");
+                                exit(1);
+                            }
+                        }
+                        Type::Bool => {
+                            if let Expr::Literal(Literal::Bool(t)) = *def.body {
+                                return Box::new(Expr::Literal(Literal::Bool(t)));
+                            } else {
+                                eprintln!("PARSE-ERROR: Expected a boolean due to type Bool");
+                                exit(1);
+                            }
+                        }
+                        Type::Unit => {
+                            if let Expr::Literal(Literal::Unit) = *def.body {
+                                return Box::new(Expr::Literal(Literal::Unit));
+                            } else {
+                                eprintln!("PARSE-ERROR: Expected unit due to type Unit");
+                                exit(1);
+                            }
+                        }
+                        // Type::Txt => {
+                        //     if let Expr::Literal(Literal::Txt(text)) = *def.body {
+                        //         return Box::new(Expr::Literal(Literal::Txt(text)));
+                        //     } else {
+                        //         eprintln!("PARSE-ERROR: Expected a real number due to type Real");
+                        //         exit(1);
+                        //     }
+                        // }
+                        Type::Any => {
+                            eprintln!(
+                                "TODO: The expression has type Any, which cannot be resolved."
+                            );
+                            exit(1);
+                        }
+                        Type::IO(_) => {
+                            eprintln!(
+                                "TODO: The expression has type IO, which is not handled yet."
+                            );
+                            exit(1);
+                        }
+                        Type::Fn(domain, _codomain) => {
+                            parse_expr(tokens, idx, defs, Some(domain.clone()));
+                        }
+                        _ => {
+                            todo!();
+                        }
+                    }
+                    return def.body.clone();
                 }
             }
         }
-        _ => exit(1),
+        _ => {
+            eprintln!(
+                "PARSE-ERROR: Could not handle the token of type: {:?}. Expected an expression here.",
+                tokens[*idx]
+            );
+            exit(1);
+        }
     }
+    eprintln!(
+        "PARSE-ERROR: Could not handle the token of type: {:?}. Likely because it was a name not found in global scope.",
+        tokens[*idx]
+    );
+    exit(1);
 }
 
 fn parse_adt(tokens: &Vec<Token>, idx: &mut usize) -> ADT {
@@ -337,7 +334,6 @@ fn parse_literal(tokens: &Vec<Token>, idx: &mut usize) -> Literal {
 fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
     let mut name = String::new();
     let mut expr_type: Type = Type::Any;
-    let mut defs = Vec::<Def>::new();
 
     while view < tokens.len() {
         println!("CURRENT TOKEN IS: {:?} WITH ID: {}", tokens[view], view);
@@ -369,8 +365,7 @@ fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
                     }
                     Type::Any => eprintln!("ERROR: expression {name} has type any!"),
                     Type::Fn(_, _) => {
-                        let closure: Closure =
-                            parse_closure(&tokens, &mut view, &expr_type, &mut defs);
+                        let closure: Closure = parse_closure(&tokens, &mut view, &expr_type, defs);
                         defs.push(Def {
                             name: name.clone(),
                             def_type: expr_type.clone(),
@@ -380,7 +375,10 @@ fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
                     Type::IO(_) => todo!(),
                 }
             }
-            Token::FnArrow => {}
+            Token::FnArrow => {
+                eprintln!("ERROR: Function arrows are unreachable here.");
+                exit(1);
+            }
             token => eprintln!("ERROR: Found unexpected token {:?}!", token),
         }
         view += 1;
@@ -388,6 +386,7 @@ fn parse(tokens: Vec<Token>, defs: &mut Vec<Def>, mut view: usize) {
 }
 
 fn main() -> std::io::Result<()> {
+    Lexer::hello();
     let file = {
         let file = File::open("./examples/main.hm")?;
         BufReader::new(file)

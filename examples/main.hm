@@ -1,8 +1,9 @@
-counter : Int = 0
-;
-add_one : Int -> Int = \x = add 1 x
-;
-incremented_counter : Int = add_one counter
-;
-main : IO () = print (incremented_counter 1)
-;
+CONST counter : Int = 0;
+
+FN add_one : Int -> Int 
+  = \x = add(1, x);
+
+FN incremented_counter : Int = add_one counter;
+
+FN main : ()
+  = print(incremented_counter(1));
